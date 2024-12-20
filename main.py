@@ -8,9 +8,9 @@ import json
 # Pyrogram Client Setup
 app = Client(
     "cc_checker_bot",
-    api_id="YOUR_API_ID",
-    api_hash="YOUR_API_HASH",
-    bot_token="YOUR_BOT_TOKEN"
+    api_id="28271744",
+    api_hash="1df4d2b4dc77dc5fd65622f9d8f6814d",
+    bot_token="7393878224:AAGTFjEclUdXYI0NzaRUUqmRUwFrNBhYVKo"
 )
 
 # Function to check card details
