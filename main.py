@@ -63,16 +63,7 @@ def check_card_details(card):
         }
 
         response_2 = requests.post(donation_url, headers=headers_2, data=data_2)
-        try:
-            result_2 = json.loads(response_2.text)
-        except json.JSONDecodeError:
-            return "DEAD❌\nMessage: Unknown response format\nReason: Parsing Error"
-
-        if not result_2.get("res", False):
-            error = result_2.get("error", {}).get("error", {})
-            decline_message = error.get("message", "Unknown reason")
-            decline_reason = error.get("decline_code", "N/A")
-            return f"DEAD❌\nMessage: {decline_message}\nReason: {decline_reason}"
+        result_2 = response_2.text
 
         if "payment_intent_unexpected_state" in result_2:
             return "Payment Intent Confirmed✅"
@@ -165,12 +156,10 @@ async def check_cards(client, message: Message):
 
         await msg.edit_text(
             f"↯ **NONSK CHECKER**\n\n"
-            f"**CC:** `{card}`\n"
+            f"**CC:** {card}\n"
             f"**Status:** {status}\n"
-            f"**Message:** {status.split('Message: ')[-1].split('\\n')[0]}\n"
-            f"**Reason:** {status.split('Reason: ')[-1].split('\\n')[0]}\n\n"
-            f"**Checking Info**\n"
-            f"____________________\n\n"
+            f"\n**Checking Info**\n"
+            f"------------------\n"
             f"**Total:** {results['total']}\n"
             f"**Checked:** {index}\n"
             f"**Live:** {results['cvv']}\n"
